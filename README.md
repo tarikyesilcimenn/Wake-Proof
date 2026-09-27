@@ -1,17 +1,17 @@
 # WakeProof
 
-An offline alarm for heavy sleepers. The alarm keeps ringing until you provide
+A proof alarm for heavy sleepers. The alarm keeps ringing until you provide
 **physical proof** that you actually got out of bed — a QR code taped to the
-bathroom mirror, an NFC sticker on the kettle, real steps, math, or a shake.
+bathroom mirror, real steps, math, or a shake.
 
 Built with Flutter for **iOS and Android**.
 
-> **No API. No backend. No account. No tracking.**
-> WakeProof writes no networking code and ships no analytics SDK, crash
-> reporter, ad identifier or AI service. Release builds go further and strip the
-> `INTERNET` permission entirely, so the shipped app is physically incapable of
-> opening a socket. Every alarm, station, QR payload, NFC tag id and statistic
-> lives in this app's private storage and is deleted with the app.
+> **No backend of our own. No account. No tracking.**
+> WakeProof ships no analytics SDK, crash reporter, ad identifier or AI service.
+> Its only network traffic is the subscription check with Apple and
+> [RevenueCat](https://www.revenuecat.com/privacy). Every alarm, station, QR
+> payload and statistic lives in this app's private storage and is deleted with
+> the app.
 
 ## Support
 
@@ -50,17 +50,13 @@ configured in `android/app/build.gradle.kts`.
 
 ### iOS: two manual Xcode steps
 
-Windows/Linux checkouts cannot edit the Xcode project, so two things must be
+Windows/Linux checkouts cannot edit the Xcode project, so one thing must be
 done once on a Mac:
 
 1. **Alarm tones** — drag `ios/Runner/Sounds/*.wav` into the Runner target
    (Build Phases → Copy Bundle Resources). Until then iOS falls back to the
    default notification sound; in-app playback works either way because the
    same files are also Flutter assets.
-2. **NFC capability** — attach `ios/Runner/Runner.entitlements` to the Runner
-   target (Signing & Capabilities → *Near Field Communication Tag Reading*) and
-   enable the capability on the App ID. Without it, NFC stations report
-   "unsupported" and the app degrades to QR gracefully.
 
 ---
 
@@ -72,13 +68,12 @@ done once on a Mac:
 | Create/edit alarm: time, repeat days, label, sound, snooze mode, vibrate | Done |
 | Mission chain builder with drag-to-reorder and per-mission config | Done |
 | QR stations: local generation, naming, print / save / share as PDF | Done |
-| NFC stations: tag registration by hardware id, graceful fallback | Done |
 | Ringing screen: full-screen, looping tone, hold-to-emergency-stop | Done |
-| Missions: QR (live camera), NFC, Steps, Math, Shake | Done |
+| Missions: QR (live camera), Steps, Math, Shake | Done |
 | Wake Check: fires N minutes after dismissal, timed, breaks streak on fail | Done |
 | Success screen: clear time, steps, streak, next alarm preview | Done |
 | Insights: streak calendar, averages, missed alarms, emergency stops | Done |
-| Alarm readiness: notifications, exact alarm, battery, camera, motion, NFC | Done |
+| Alarm readiness: notifications, exact alarm, battery, camera, motion | Done |
 | Local persistence for alarms, stations, attempts, settings | Done |
 | Light + dark theme ported from the design mockup | Done |
 
@@ -115,15 +110,15 @@ What that analysis changed here:
 | Mission **variety** is the headline — more missions implies a better alarm | Missions are ranked by *what they prove*. A chain of math + shake is labelled **Weak** with "Every mission here can be done lying down. Loud, but not proof." |
 | Missions presented as a flat menu of equals | The picker is grouped into "Proves you got up", "After the chain", and "Wakes your brain, not your body", and each row states how it can be cheated |
 | Loudness as the differentiator ("End of the World", "Highway Emergency") | Tones are grouped by intensity (Gentle / Firm / Harsh) with a visible strength meter, so you can pick without auditioning all of them at 1am |
-| Ads + subscription; reviewers report paying twice and ads that take several taps to dismiss | No purchases, no ads, no accounts |
-| Sleep tracking and snore **recording** — a microphone running all night, tied to an account | No microphone permission at all, no account, no network |
+| Ads + subscription; reviewers report paying twice and ads that take several taps to dismiss | One clearly priced subscription, no ads, no accounts |
+| Sleep tracking and snore **recording** — a microphone running all night, tied to an account | No microphone permission at all, no account |
 
 The **proof strength meter** (`lib/missions/proof_strength.dart`) is the core of
 this positioning. It scores a chain 0–100 by how hard it is to beat *without
 leaving the bed*, and hard-caps any chain with no station and no steps at 24 —
 because no quantity of arithmetic proves you stood up, and grading it higher
 would be the same overclaim the category is built on. It also names the single
-highest-value fix ("Add a QR or NFC station far from the bed"). Covered by
+highest-value fix ("Add a QR station far from the bed"). Covered by
 `test/proof_strength_test.dart`.
 
 ## Architecture
@@ -152,7 +147,6 @@ lib/
 │   ├── alarm_sounds.dart         bundled tone catalogue
 │   ├── step_counter.dart         pedometer with accelerometer fallback
 │   ├── shake_detector.dart       peak-detection shake counter
-│   ├── nfc_service.dart          Core NFC / Android NFC tag id reader
 │   └── qr_export_service.dart    on-device PDF for print/save
 └── ui/
     ├── widgets/                  WpCard, WpStepRow, WpTile, WpStat, WpHoldButton…
@@ -166,10 +160,10 @@ lib/
 ```dart
 Alarm         id, hour, minute, repeatDays(ISO 1–7), missions[], label,
               soundId, snoozeMode, vibrate, enabled
-Mission       id, type(qr|nfc|steps|math|shake|wakeCheck), stationId,
+Mission       id, type(qr|steps|math|shake|wakeCheck), stationId,
               targetSteps, mathProblems, difficulty, shakeCount,
               wakeCheckDelayMinutes
-ProofStation  id, kind(qr|nfc), name, secret, createdAt, note
+ProofStation  id, kind(qr), name, secret, createdAt, note
 AlarmAttempt  id, alarmId, firedAt, dismissedAt, emergencyStopped, snoozeCount,
               stepsCompleted, completedMissionIds[], wakeCheck, missed
 StreakStats   derived: currentStreak, bestStreak, onTimeRate, averageWakeMinutes,
@@ -201,7 +195,6 @@ allowed to block the alarm.
   QR cannot satisfy a mission, and the code cannot be reproduced by another
   install.
 * Only live camera frames are accepted; there is no gallery path.
-* NFC compares the tag's hardware id, so a copied NDEF record is not enough.
 * Steps prefer the hardware pedometer; the accelerometer fallback only counts
   proper peak-to-trough cycles at a walking cadence.
 * Shake and Math are labelled in-app as brain/backup missions, not proof —
@@ -262,42 +255,27 @@ second implementation backed by AlarmKit and choosing it at construction time in
 | Feature | Android | iOS |
 | --- | --- | --- |
 | QR camera scan | CameraX via `mobile_scanner` | AVFoundation via `mobile_scanner` |
-| NFC | Android NFC (tag id) | Core NFC (needs entitlement) |
 | Steps | `TYPE_STEP_COUNTER`, needs `ACTIVITY_RECOGNITION` | Core Motion pedometer |
 | Steps fallback | Accelerometer peak detection | Accelerometer peak detection |
 | Shake | Accelerometer | Accelerometer |
 
 If a device has no step sensor or the permission is refused, the step mission
-silently switches to the accelerometer counter and says so on screen. If a
-device has no NFC, NFC missions are skipped rather than trapping the user awake,
-and the UI recommends a QR station instead.
+silently switches to the accelerometer counter and says so on screen.
 
 ---
 
 ## Privacy guarantee
 
-* **No network code.** There is no `http`, `dio`, `web_socket_channel` or
-  similar dependency, and no line in `lib/` opens a connection. Grep for it.
-* **`INTERNET` is stripped from release builds.** This one deserves the full
-  story rather than a slogan:
-  * The app's own manifest never declares it.
-  * But `mobile_scanner` depends on ML Kit's barcode scanner, which transitively
-    pulls in `com.google.android.datatransport`, and *that* library's manifest
-    contributes `INTERNET` and `ACCESS_NETWORK_STATE` so it can upload usage
-    telemetry to Google.
-  * `android/app/src/release/AndroidManifest.xml` therefore removes both with
-    `tools:node="remove"`. The release APK's merged manifest contains neither,
-    which means no bundled library — present or future — can reach the network,
-    by accident or otherwise.
-  * QR scanning is unaffected: mobile_scanner uses the **bundled** on-device ML
-    Kit model, not the Play Services variant that downloads one.
-  * Debug and profile builds keep the permission so `flutter run`, hot reload and
-    DevTools can reach the Dart VM service. Verify a release build yourself with
-    `aapt dump permissions build/app/outputs/flutter-apk/app-release.apk`.
+* **The only network traffic is the subscription check.** `purchases_flutter`
+  (RevenueCat) talks to Apple / Google Play and RevenueCat to find out whether
+  Premium is active. There is no `http`, `dio` or `web_socket_channel`
+  dependency, and nothing in `lib/` sends alarm, station or statistics data
+  anywhere.
+* **QR scanning is on-device.** mobile_scanner uses the bundled ML Kit model,
+  not the Play Services variant that downloads one.
 * **No analytics, no crash reporting, no advertising id, no push tokens.**
-* **No AI or model inference.** QR decoding is a deterministic algorithm; NFC is
-  an id comparison. Nothing is inferred about you.
-* **No cloud storage.** Statistics are computed from a local JSON file.
+* **No AI or model inference.** QR decoding is a deterministic algorithm. Nothing is inferred about you.
+* **No cloud storage of your data.** Statistics are computed from a local JSON file.
 * **Erase everything** from Setup → Privacy. There is no server copy.
 
 Permissions requested, and why:
@@ -308,7 +286,6 @@ Permissions requested, and why:
 | Exact alarm (Android) | firing at the right second |
 | Battery optimisation exemption (Android, optional) | surviving power saving |
 | Camera | scanning your own QR station, live only |
-| NFC | reading the id of your own tag |
 | Activity recognition / Motion | counting steps for the step mission |
 | Vibrate, wake lock | alarm feedback and keeping the ringing screen up |
 
@@ -340,9 +317,9 @@ running on. Tokens live in `lib/core/theme/wp_palette.dart` as a Flutter
 | Section headers | UPPERCASE footnote in secondary grey | Sentence case, ink coloured |
 | Icons | SF Symbols-style `CupertinoIcons` | Material `Icons` |
 
-Two icons — NFC and walking — keep the Material glyph on both platforms:
-`CupertinoIcons` has no contactless or pedestrian symbol and its nearest matches
-(wifi, person) read as the wrong thing. A misleading icon is worse than a
+The walking icon keeps the Material glyph on both platforms:
+`CupertinoIcons` has no pedestrian symbol and its nearest match
+(person) reads as the wrong thing. A misleading icon is worse than a
 cross-platform one.
 
 **How it works.** `lib/core/platform/wp_adaptive.dart` holds the branching
